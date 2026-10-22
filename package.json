@@ -1,0 +1,16 @@
+{
+  "name": "unifi-readonly-dashboard",
+  "type": "module",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Read-only UniFi Network dashboard and firewall/VLAN audit tool — device health, firewall policy analysis, and network inventory from a single API key.",
+  "keywords": ["unifi", "ubiquiti", "network", "dashboard", "firewall", "audit", "read-only"],
+  "scripts": {
+    "test-connection": "node scripts/test-connection.js",
+    "security-audit": "node scripts/security-audit.js",
+    "firewall-audit": "node scripts/firewall-audit.js",
+    "dashboard": "node server.js"
+  },
+  "engines": { "node": ">=20.12.0" },
+  "dependencies": { "undici": "^8.9.0" }
+}

@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>UniFi Network — Read-Only Dashboard</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted:          #898781;
+    --gridline:       #2c2c2a;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5; /* wired / primary magnitude */
+    --series-2:       #d95926; /* wireless */
+    --good:           #0ca30c;
+    --warning:        #fab219;
+    --critical:       #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; }
+  .subtitle { color: var(--text-secondary); font-size: 13px; margin: 4px 0 0; }
+  .refresh-info { text-align: right; font-size: 12px; color: var(--muted); }
+  .refresh-info button {
+    background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; margin-bottom: 4px;
+  }
+  .refresh-info button:hover { border-color: var(--series-1); }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .tab-btn {
+    background: none; border: none; color: var(--text-secondary); font-size: 13.5px; font-weight: 500;
+    padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--series-1); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  section { margin-bottom: 32px; }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 10px; }
+  .section-note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .tile .value { font-size: 30px; font-weight: 600; line-height: 1.1; }
+  .tile .label { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+  .tile.attention .value { color: var(--critical); }
+  .tile.attention.clear .value { color: var(--good); }
+  .tile.firmware.clear .value { color: var(--good); }
+  .tile.firmware:not(.clear) .value { color: var(--warning); }
+  .split-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 10px; background: var(--gridline); }
+  .split-bar .wired { background: var(--series-1); }
+  .split-bar .wireless { background: var(--series-2); margin-left: 2px; }
+  .legend-row { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+  .legend-row .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+  .issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .issue-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--critical);
+    border-radius: 8px; padding: 10px 14px; font-size: 14px;
+  }
+  .issue-row.warning { border-left-color: var(--warning); }
+  .issue-row .name { font-weight: 600; }
+  .issue-row .model { color: var(--text-secondary); }
+  .issue-row .state { margin-left: auto; color: var(--text-secondary); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 14px; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  tr:last-child td { border-bottom: none; }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.good { background: var(--good); }
+  .dot.warning { background: var(--warning); }
+  .dot.critical { background: var(--critical); }
+
+  .metric-cell { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+  .metric-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--gridline); overflow: hidden; }
+  .metric-bar > span { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+  .metric-bar.warn > span { background: var(--warning); }
+  .metric-bar.crit > span { background: var(--critical); }
+  .metric-num { font-variant-numeric: tabular-nums; font-size: 13px; width: 42px; text-align: right; flex: none; }
+
+  .bar-list { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 180px 1fr 32px; align-items: center; gap: 10px; font-size: 13.5px; }
+  .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { height: 14px; background: var(--gridline); border-radius: 4px; overflow: hidden; }
+  .bar-track > span { display: block; height: 100%; background: var(--series-1); border-radius: 4px; }
+  .bar-row .count { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+  .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--gridline); color: var(--text-secondary); margin-left: 6px; }
+  .badge.hot { background: rgba(250,178,25,0.18); color: var(--warning); }
+  .badge.risk-high { background: rgba(208,59,59,0.18); color: var(--critical); }
+  .badge.risk-medium { background: rgba(250,178,25,0.18); color: var(--warning); }
+  .badge.risk-low { background: var(--gridline); color: var(--text-secondary); }
+
+  .finding-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-left: 3px solid var(--critical);
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; font-size: 13.5px;
+  }
+  .finding-card .title { font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .finding-card .meta { color: var(--text-secondary); font-size: 12.5px; margin-bottom: 6px; }
+  .finding-card .line { margin: 2px 0; }
+  .finding-card .line b { color: var(--text-secondary); font-weight: 500; }
+
+  .info-list { list-style: none; margin: 0; padding: 0; font-size: 13.5px; color: var(--text-secondary); }
+  .info-list li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .info-list li:last-child { border-bottom: none; }
+
+  details { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+  details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  details table { margin-top: 10px; }
+
+  .banner { border: 1px solid var(--border); border-left: 3px solid var(--warning); border-radius: 8px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 16px; }
+  .banner code { background: var(--gridline); padding: 1px 5px; border-radius: 3px; }
+
+  .error { color: var(--critical); font-size: 14px; }
+  .empty-note { color: var(--muted); font-size: 13.5px; padding: 10px 2px; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <h1 id="site-name">UniFi Network</h1>
+        <p class="subtitle" id="version-line">UniFi Network — loading…</p>
+      </div>
+      <div class="refresh-info">
+        <button onclick="refreshActiveTab()">Refresh</button>
+        <div id="generated-at">–</div>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview" onclick="showTab('overview')">Overview</button>
+      <button class="tab-btn" data-tab="firewall" onclick="showTab('firewall')">Firewall</button>
+      <button class="tab-btn" data-tab="networks" onclick="showTab('networks')">Networks</button>
+    </div>
+
+    <!-- ================= OVERVIEW ================= -->
+    <div class="tab-panel active" id="tab-overview">
+      <section>
+        <div class="tiles">
+          <div class="tile"><div class="value" id="device-count">–</div><div class="label">Devices online</div></div>
+          <div class="tile attention" id="attention-tile"><div class="value" id="attention-count">–</div><div class="label">Needs attention</div></div>
+          <div class="tile firmware" id="firmware-tile"><div class="value" id="firmware-count">–</div><div class="label">Firmware updates available</div></div>
+          <div class="tile">
+            <div class="value" id="client-count">–</div><div class="label">Clients connected</div>
+            <div class="split-bar"><span class="wired" id="wired-bar"></span><span class="wireless" id="wireless-bar"></span></div>
+            <div class="legend-row">
+              <span><span class="dot" style="background:var(--series-1)"></span><span id="wired-count">–</span> wired</span>
+              <span><span class="dot" style="background:var(--series-2)"></span><span id="wireless-count">–</span> wireless</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="issues-section">
+        <p class="section-title">Needs attention</p>
+        <ul class="issues" id="issues-list"></ul>
+      </section>
+
+      <section>
+        <p class="section-title">Resource health — top by CPU / memory</p>
+        <table>
+          <thead><tr><th>Device</th><th>Model</th><th>CPU</th><th>Memory</th><th>Uptime</th></tr></thead>
+          <tbody id="resource-rows"></tbody>
+        </table>
+      </section>
+
+      <section id="radio-section">
+        <p class="section-title">Wi-Fi radio quality</p>
+        <table>
+          <thead><tr><th>Access point</th><th>Band</th><th>Width</th><th>Retry rate</th></tr></thead>
+          <tbody id="radio-rows"></tbody>
+        </table>
+        <p class="section-note">Retry rate ≥ <span id="retry-threshold"></span>% flagged — usually means interference or channel congestion, not a hardware fault.</p>
+      </section>
+
+      <section>
+        <p class="section-title">Switch port capacity</p>
+        <table>
+          <thead><tr><th>Switch</th><th>Ports</th><th>Free</th></tr></thead>
+          <tbody id="port-rows"></tbody>
+        </table>
+      </section>
+
+      <section>
+        <p class="section-title">Busiest devices — by connected clients</p>
+        <div class="bar-list" id="busiest-list"></div>
+      </section>
+
+      <section>
+        <p class="section-title">All devices (<span id="device-total">–</span>)</p>
+        <table>
+          <thead><tr><th>Device</th><th>Model</th><th>IP</th><th>Status</th><th>Clients</th></tr></thead>
+          <tbody id="device-rows"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- ================= FIREWALL ================= -->
+    <div class="tab-panel" id="tab-firewall">
+      <div class="banner" id="firewall-banner" style="display:none"></div>
+
+      <section>
+        <div class="tiles">
+          <div class="tile"><div class="value" id="fw-policy-count">–</div><div class="label">Policies (enabled/total)</div></div>
+          <div class="tile attention" id="fw-wan-tile"><div class="value" id="fw-wan-count">–</div><div class="label">Broad WAN-inbound rules</div></div>
+          <div class="tile"><div class="value" id="fw-redundant-count">–</div><div class="label">Redundant rule groups</div></div>
+        </div>
+      </section>
+
+      <section id="fw-wan-section">
+        <p class="section-title">Broad WAN-inbound rules</p>
+        <p class="section-note" style="margin:0 0 10px">Enabled custom rules with an unrestricted source in the External zone, allowing any destination port — not scoped to established/related return traffic.</p>
+        <div id="fw-wan-list"></div>
+      </section>
+
+      <p class="section-note">Port forwards aren't exposed by this API yet — check Settings → Port Forwarding on the console directly (usually a short list).</p>
+
+      <section id="fw-redundant-section">
+        <p class="section-title">Redundant / duplicate rules</p>
+        <p class="section-note" style="margin:0 0 10px">Differently-named rules with identical effect. Rules that share a name are UniFi's own per-zone expansion of one rule, not duplicates — those are excluded.</p>
+        <ul class="info-list" id="fw-redundant-list"></ul>
+      </section>
+
+      <section id="fw-dangling-section">
+        <p class="section-title">Dangling references</p>
+        <ul class="info-list" id="fw-dangling-list"></ul>
+      </section>
+
+      <section>
+        <p class="section-title">Default zone trust <span class="badge">vendor-predefined</span></p>
+        <p class="section-note" style="margin:0 0 10px">Zone pairs where at least one system-defined rule allows everything by default — not something you configured. A narrower custom rule can still restrict specific traffic within a pair listed here, so treat this as informational, not the final word.</p>
+        <ul class="info-list" id="fw-zonetrust-list"></ul>
+      </section>
+    </div>
+
+    <!-- ================= NETWORKS ================= -->
+    <div class="tab-panel" id="tab-networks">
+      <div class="banner" id="networks-banner" style="display:none"></div>
+
+      <section id="net-findings-section">
+        <p class="section-title">Worth a second look</p>
+        <ul class="info-list" id="net-findings-list"></ul>
+      </section>
+
+      <section>
+        <p class="section-title">Networks / VLANs (<span id="net-total">–</span>)</p>
+        <table>
+          <thead><tr><th>Name</th><th>VLAN</th><th>Subnet</th><th>Zone</th><th>Isolated</th><th>Enabled</th></tr></thead>
+          <tbody id="net-rows"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <p class="error" id="error" style="display:none"></p>
+  </div>
+
+  <script>
+    let firewallData = null; // cached client-side once loaded; refresh button re-fetches
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function fmtUptime(sec) {
+      if (sec == null) return '–';
+      const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600);
+      return d > 0 ? `${d}d ${h}h` : `${h}h`;
+    }
+    function metricBar(pct, hot) {
+      const p = pct ?? 0;
+      const cls = hot ? (p >= 90 ? 'crit' : 'warn') : '';
+      return `<div class="metric-cell">
+        <div class="metric-bar ${cls}"><span style="width:${Math.min(p, 100)}%"></span></div>
+        <div class="metric-num">${pct == null ? '–' : p.toFixed(0) + '%'}</div>
+      </div>`;
+    }
+
+    function showTab(name) {
+      for (const btn of document.querySelectorAll('.tab-btn')) btn.classList.toggle('active', btn.dataset.tab === name);
+      for (const panel of document.querySelectorAll('.tab-panel')) panel.classList.toggle('active', panel.id === 'tab-' + name);
+      if ((name === 'firewall' || name === 'networks') && !firewallData) loadFirewall();
+    }
+
+    function refreshActiveTab() {
+      const active = document.querySelector('.tab-btn.active').dataset.tab;
+      if (active === 'overview') load();
+      else loadFirewall(true);
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/summary');
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        document.getElementById('site-name').textContent = data.site?.name ? `UniFi Network — ${data.site.name}` : 'UniFi Network';
+        document.getElementById('version-line').textContent = `UniFi Network ${data.appVersion ?? ''}`;
+        document.getElementById('generated-at').textContent = 'as of ' + new Date(data.generatedAt).toLocaleTimeString();
+
+        const onlineCount = data.devices.filter((d) => d.statusLevel === 'good').length;
+        document.getElementById('device-count').textContent = `${onlineCount}/${data.devices.length}`;
+        document.getElementById('device-total').textContent = data.devices.length;
+
+        document.getElementById('attention-count').textContent = data.needsAttention.length;
+        document.getElementById('attention-tile').classList.toggle('clear', data.needsAttention.length === 0);
+
+        document.getElementById('firmware-count').textContent = data.firmwareOutdated.length;
+        document.getElementById('firmware-tile').classList.toggle('clear', data.firmwareOutdated.length === 0);
+
+        const { wired, wireless } = data.clients;
+        document.getElementById('client-count').textContent = wired + wireless;
+        document.getElementById('wired-count').textContent = wired;
+        document.getElementById('wireless-count').textContent = wireless;
+        const total = Math.max(wired + wireless, 1);
+        document.getElementById('wired-bar').style.width = `${(wired / total) * 100}%`;
+        document.getElementById('wireless-bar').style.width = `${(wireless / total) * 100}%`;
+
+        // Needs attention
+        const issuesSection = document.getElementById('issues-section');
+        if (data.needsAttention.length) {
+          issuesSection.style.display = '';
+          document.getElementById('issues-list').innerHTML = data.needsAttention.map((d) => `
+            <li class="issue-row ${d.statusLevel === 'warning' ? 'warning' : ''}">
+              <span class="dot ${d.statusLevel}"></span>
+              <span class="name">${escapeHtml(d.name)}</span>
+              <span class="model">${escapeHtml(d.model)}</span>
+              <span class="state">${escapeHtml(d.state)}</span>
+            </li>`).join('');
+        } else {
+          issuesSection.style.display = 'none';
+        }
+
+        // Resource health
+        document.getElementById('resource-rows').innerHTML = data.resourceHealth.slice(0, 12).map((d) => `
+          <tr>
+            <td>${escapeHtml(d.name)}${d.hot ? '<span class="badge hot">hot</span>' : ''}</td>
+            <td>${escapeHtml(d.model)}</td>
+            <td>${metricBar(d.cpuPct, d.hot)}</td>
+            <td>${metricBar(d.memPct, d.hot)}</td>
+            <td>${fmtUptime(d.uptimeSec)}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="empty-note">No live stats available.</td></tr>';
+
+        // Radio quality
+        document.getElementById('retry-threshold').textContent = data.thresholds.retryWarnPct;
+        const radios = data.radioHealth.filter((r) => r.txRetriesPct != null);
+        document.getElementById('radio-section').style.display = radios.length ? '' : 'none';
+        document.getElementById('radio-rows').innerHTML = radios.slice(0, 15).map((r) => `
+          <tr>
+            <td>${escapeHtml(r.device)}</td>
+            <td>${r.frequencyGHz}GHz${r.channel ? ' ch' + r.channel : ''}</td>
+            <td>${r.channelWidthMHz ? r.channelWidthMHz + 'MHz' : '–'}</td>
+            <td>${metricBar(r.txRetriesPct, r.warn)}</td>
+          </tr>`).join('');
+
+        // Port capacity
+        document.getElementById('port-rows').innerHTML = data.portCapacity.map((d) => `
+          <tr>
+            <td>${escapeHtml(d.name)}</td>
+            <td>${d.ports.up}/${d.ports.total} up</td>
+            <td>${d.ports.down}${d.ports.down === 0 ? '<span class="badge">full</span>' : ''}</td>
+          </tr>`).join('') || '<tr><td colspan="3" class="empty-note">No switches reporting.</td></tr>';
+
+        // Busiest devices
+        const maxClients = Math.max(...data.topByClients.map((d) => d.clientCount), 1);
+        document.getElementById('busiest-list').innerHTML = data.topByClients.map((d) => `
+          <div class="bar-row">
+            <div class="name" title="${escapeHtml(d.name)} (${escapeHtml(d.model)})">${escapeHtml(d.name)}</div>
+            <div class="bar-track"><span style="width:${(d.clientCount / maxClients) * 100}%"></span></div>
+            <div class="count">${d.clientCount}</div>
+          </div>`).join('') || '<div class="empty-note">No client data.</div>';
+
+        // Full device table — issues first, then alphabetical
+        const sorted = [...data.devices].sort((a, b) => {
+          const rank = (x) => (x.statusLevel === 'good' ? 1 : 0);
+          return rank(a) - rank(b) || a.name.localeCompare(b.name);
+        });
+        document.getElementById('device-rows').innerHTML = sorted.map((d) => `
+          <tr>
+            <td>${escapeHtml(d.name)}</td>
+            <td>${escapeHtml(d.model)}</td>
+            <td>${escapeHtml(d.ipAddress ?? '–')}</td>
+            <td><span class="status"><span class="dot ${d.statusLevel}"></span>${escapeHtml(d.state)}</span></td>
+            <td>${d.clientCount}</td>
+          </tr>`).join('');
+
+        document.getElementById('error').style.display = 'none';
+      } catch (err) {
+        const el = document.getElementById('error');
+        el.style.display = 'block';
+        el.textContent = 'Could not load data: ' + err.message;
+      }
+    }
+
+    function showFirewallBanner(id, message) {
+      const el = document.getElementById(id);
+      el.style.display = 'block';
+      el.innerHTML = message;
+    }
+    function hideFirewallBanners() {
+      document.getElementById('firewall-banner').style.display = 'none';
+      document.getElementById('networks-banner').style.display = 'none';
+    }
+
+    async function loadFirewall(force) {
+      if (force) firewallData = null;
+      try {
+        const res = await fetch('/api/firewall');
+        const data = await res.json();
+        if (data.error) {
+          const msg = 'Could not load firewall data: ' + escapeHtml(data.error);
+          showFirewallBanner('firewall-banner', msg);
+          showFirewallBanner('networks-banner', msg);
+          return;
+        }
+        hideFirewallBanners();
+        firewallData = data;
+        renderFirewall(data);
+        renderNetworks(data);
+      } catch (err) {
+        const msg = 'Could not load firewall data: ' + escapeHtml(err.message);
+        showFirewallBanner('firewall-banner', msg);
+        showFirewallBanner('networks-banner', msg);
+      }
+    }
+
+    function renderFirewall(data) {
+      document.getElementById('fw-policy-count').textContent = `${data.policyCounts.enabled}/${data.policyCounts.total}`;
+      document.getElementById('fw-wan-count').textContent = data.broadWanInbound.length;
+      document.getElementById('fw-wan-tile').classList.toggle('clear', data.broadWanInbound.length === 0);
+      document.getElementById('fw-redundant-count').textContent = data.redundantGroups.length;
+
+      const wanSection = document.getElementById('fw-wan-section');
+      if (data.broadWanInbound.length) {
+        wanSection.style.display = '';
+        document.getElementById('fw-wan-list').innerHTML = data.broadWanInbound.map((p) => `
+          <div class="finding-card">
+            <div class="title">${escapeHtml(p.name)}</div>
+            <div class="meta">protocol: ${escapeHtml(p.protocol)}</div>
+            <div class="line"><b>Source:</b> ${escapeHtml(p.source)}</div>
+            <div class="line"><b>Destination:</b> ${escapeHtml(p.destination)} (any port)</div>
+            ${p.otherZones.length ? `<div class="line"><b>Also applies to source zones:</b> ${escapeHtml(p.otherZones.join(', '))} (same rule, auto-expanded)</div>` : ''}
+          </div>`).join('');
+      } else {
+        wanSection.style.display = 'none';
+      }
+
+      const redundantSection = document.getElementById('fw-redundant-section');
+      if (data.redundantGroups.length) {
+        redundantSection.style.display = '';
+        document.getElementById('fw-redundant-list').innerHTML = data.redundantGroups.map((names) => `
+          <li>${names.length} rules do exactly the same thing: ${names.map((n) => `<b style="color:var(--text-primary)">${escapeHtml(n)}</b>`).join(', ')}</li>`).join('');
+      } else {
+        redundantSection.style.display = 'none';
+      }
+
+      const danglingSection = document.getElementById('fw-dangling-section');
+      if (data.danglingPolicies.length) {
+        danglingSection.style.display = '';
+        document.getElementById('fw-dangling-list').innerHTML = data.danglingPolicies.map((d) => `
+          <li><b style="color:var(--text-primary)">${escapeHtml(d.name)}</b> references missing: ${escapeHtml(d.missing.join(', '))}</li>`).join('');
+      } else {
+        danglingSection.style.display = 'none';
+      }
+
+      document.getElementById('fw-zonetrust-list').innerHTML = data.defaultZoneTrust.map((t) => `
+        <li>${escapeHtml(t.from)} → ${escapeHtml(t.to)}: allowed by default</li>`).join('');
+    }
+
+    function renderNetworks(data) {
+      document.getElementById('net-total').textContent = data.networks.length;
+
+      const findingsSection = document.getElementById('net-findings-section');
+      if (data.networkFindings.length) {
+        findingsSection.style.display = '';
+        document.getElementById('net-findings-list').innerHTML = data.networkFindings.map((f) => `
+          <li><b style="color:var(--text-primary)">${escapeHtml(f.name)}</b>: ${escapeHtml(f.reasons.join('; '))}</li>`).join('');
+      } else {
+        findingsSection.style.display = 'none';
+      }
+
+      document.getElementById('net-rows').innerHTML = data.networks.map((n) => `
+        <tr>
+          <td>${escapeHtml(n.name)}</td>
+          <td>${n.vlan ?? '–'}</td>
+          <td>${escapeHtml(n.subnet ?? '–')}</td>
+          <td>${escapeHtml(n.zone ?? '–')}</td>
+          <td>${n.isolationEnabled == null ? '–' : n.isolationEnabled ? 'yes' : 'no'}</td>
+          <td>${n.enabled ? '<span class="status"><span class="dot good"></span>yes</span>' : '<span class="status"><span class="dot critical"></span>no</span>'}</td>
+        </tr>`).join('');
+    }
+
+    load();
+  </script>
+</body>
+</html>
